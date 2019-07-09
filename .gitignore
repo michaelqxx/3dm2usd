@@ -1,0 +1,7 @@
+.vscode
+env
+venv
+*.usd*
+*.3dm
+*.obj
+*.mtl
