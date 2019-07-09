@@ -37,6 +37,7 @@ def getTexture(material):
 
 # open 3dm
 model = File3dm.Read(sys.argv[1])
+baseFilename = path.basename(sys.argv[1]).replace('.3dm','')
 
 if path.exists(texDir):
     shutil.rmtree(texDir)
@@ -173,7 +174,7 @@ for obj in model.Objects:
 
     count += 1
 
-
 stage.GetRootLayer().Save()
 
-#subprocess.call(["usdcat", sys.argv[2], "-o", "out.usdc"])
+subprocess.call(["usdcat", sys.argv[2], "-o", baseFilename + ".usdc"])
+subprocess.call(["usdzip", baseFilename+ ".usdz", baseFilename + ".usdc", texDir])
