@@ -17,6 +17,8 @@ def getTexture(material):
     tex = material.GetBitmapTexture()
     if tex:
         dst = path.join(texDir, path.basename(tex.FileName))
+        print(dst)
+        print(tex.FileName)
         shutil.copyfile(tex.FileName, dst)
         return dst
     else: # doing the vectary thing, creating a 2x2 image of the color value
@@ -25,7 +27,7 @@ def getTexture(material):
         img = [(d[0],d[1],d[2], d[0],d[1],d[2]),
              (d[0],d[1],d[2], d[0],d[1],d[2])]       
 
-        dst = path.join(texDir, 'diffuse.png')
+        dst = path.join(texDir, material.Name+'_diffuse.png')
         f = open(dst, 'wb')
         w = png.Writer(2,2)
         w.write(f,img)
@@ -149,10 +151,19 @@ for obj in model.Objects:
 
         # attributes
         mesh.CreatePointsAttr(verts)
-        mesh.CreateNormalsAttr(norms)
-        mesh.SetNormalsInterpolation('faceVarying')
-        tcs = mesh.CreatePrimvar("Texture_uv", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
-        tcs.Set(texCoords)
+        #mesh.CreateNormalsAttr(norms)
+        #mesh.SetNormalsInterpolation('faceVarying')
+
+        normPrimvar = mesh.CreatePrimvar("normals", Sdf.ValueTypeNames.Normal3fArray, UsdGeom.Tokens.faceVarying)
+        normPrimvar.Set(norms)
+
+        texPrimvar = mesh.CreatePrimvar("Texture_uv", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
+        texPrimvar.Set(texCoords)
+
+        indices = Vt.IntArray(faceIndices.__len__(), faceIndices)
+        texPrimvar.SetIndices(indices)
+        normPrimvar.SetIndices(indices)
+
         mesh.CreateFaceVertexIndicesAttr(faceIndices)
         mesh.CreateFaceVertexCountsAttr(faceCounts)
         mesh.CreateExtentAttr(extent)
