@@ -45,6 +45,7 @@ mkdir(texDir)
 
 # create usd
 stage = Usd.Stage.CreateNew(sys.argv[2])
+UsdGeom.SetStageUpAxis(stage, 'Y')
 xformPrim = UsdGeom.Xform.Define(stage, '/root')
 
 ### Materials
@@ -117,18 +118,18 @@ for obj in model.Objects:
 
         # extents
         bb = geo.GetBoundingBox()
-        extent.append([bb.Min.X, bb.Min.Y, bb.Min.Z])
-        extent.append([bb.Max.X, bb.Max.Y, bb.Max.Z])
+        extent.append([bb.Min.X, bb.Min.Z, bb.Min.Y])
+        extent.append([bb.Max.X, bb.Max.Z, bb.Max.Y])
 
         # verts
         for i in range(geo.Vertices.__len__()):
             v = geo.Vertices[i]
-            verts.append([v.X,v.Y,v.Z])
+            verts.append([v.X,v.Z,-v.Y])
         
         # normals
         for i in range(geo.Normals.__len__()):
             n = geo.Normals[i]
-            norms.append([n.X,n.Y,n.Z])
+            norms.append([n.X,n.Z,-n.Y])
         
         # texture coordinates
         for i in range(geo.TextureCoordinates.__len__()):
@@ -151,8 +152,6 @@ for obj in model.Objects:
 
         # attributes
         mesh.CreatePointsAttr(verts)
-        #mesh.CreateNormalsAttr(norms)
-        #mesh.SetNormalsInterpolation('faceVarying')
 
         normPrimvar = mesh.CreatePrimvar("normals", Sdf.ValueTypeNames.Normal3fArray, UsdGeom.Tokens.faceVarying)
         normPrimvar.Set(norms)
