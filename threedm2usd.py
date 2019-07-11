@@ -1,60 +1,80 @@
 from rhino3dm import *
 from pxr import Usd, Vt, UsdGeom, UsdShade, Sdf
 import shutil
-from os import path, mkdir
+from os import path, mkdir, chdir, getcwd
 import png
 import uuid
 import subprocess
-
+import os
 import sys
 
-if len(sys.argv) != 3:
+if len(sys.argv) != 2:
     quit()
 
-texDir = '0'
+cwd = getcwd()
+
+modelPath = path.abspath(sys.argv[1])
+if not os.access(modelPath, os.F_OK):
+    print(modelPath + " does not exist")
+    quit()
+
+modelDir = path.dirname(modelPath)
+baseFilename = path.basename(sys.argv[1]).replace('.3dm','')
+usda = path.join(modelDir, baseFilename + '.usda')
+usdc = path.join(modelDir, baseFilename + '.usdc')
+usdz = path.join(modelDir, baseFilename + '.usdz')
+texDirName = '0'
+absTexDir = path.join(modelDir, texDirName)
+
+if path.exists(absTexDir):
+    shutil.rmtree(absTexDir)
+
+mkdir(absTexDir)
 
 def getTexture(material):
     tex = material.GetBitmapTexture()
     if tex:
-        dst = path.join(texDir, path.basename(tex.FileName))
-        print(dst)
-        print(tex.FileName)
-        shutil.copyfile(tex.FileName, dst)
-        return dst
+        texBase = path.basename(tex.FileName)
+        dst = path.join(absTexDir, texBase)
+        if os.access(tex.FileName, os.F_OK):
+            shutil.copyfile(tex.FileName, dst)
+        elif os.access(path.join(modelDir, texBase), os.F_OK):
+            shutil.copyfile(path.join(modelDir, texBase), dst)
+
+        return path.join(texDirName, texBase)
     else: # doing the vectary thing, creating a 2x2 image of the color value
         d = material.DiffuseColor
 
         img = [(d[0],d[1],d[2], d[0],d[1],d[2]),
              (d[0],d[1],d[2], d[0],d[1],d[2])]       
 
-        dst = path.join(texDir, material.Name+'_diffuse.png')
+        dst = path.join(absTexDir, material.Name+'_diffuse.png')
         f = open(dst, 'wb')
         w = png.Writer(2,2)
         w.write(f,img)
         f.close()
-        return dst
+        return path.join(texDirName, material.Name+'_diffuse.png')
 
 
 # open 3dm
 model = File3dm.Read(sys.argv[1])
-baseFilename = path.basename(sys.argv[1]).replace('.3dm','')
-
-if path.exists(texDir):
-    shutil.rmtree(texDir)
-
-mkdir(texDir)
 
 # create usd
-stage = Usd.Stage.CreateNew(sys.argv[2])
-UsdGeom.SetStageUpAxis(stage, 'Y')
+stage = Usd.Stage.CreateNew(usda)
+UsdGeom.SetStageUpAxis(stage, 'Y') ######## XYZ -> XZ-Y
 xformPrim = UsdGeom.Xform.Define(stage, '/root')
 
 ### Materials
 matScope = UsdGeom.Scope.Define(stage, '/materials')
 u_mats = []
+count = 0
 for mat in model.Materials:
 
-    nodeName = '/materials/' + mat.Name
+    materialScope = '/materials/'
+    if not mat.Name:
+        nodeName = materialScope + 'material_' + str(count)
+    else:
+        nodeName = materialScope + mat.Name.replace(' ', '_').replace('-', '_') + str(count)
 
     u_mat = UsdShade.Material.Define(stage, nodeName)
     stinput = u_mat.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token)
@@ -67,7 +87,7 @@ for mat in model.Materials:
     roughness = 1.0 - (mat.Shine / 255.0) # MaxShine
     pbrShader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
     # ?
-    pbrShader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    pbrShader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(mat.Shine / 255.0) # ?
 
     u_mat.CreateSurfaceOutput().ConnectToSource(pbrShader, "surface")
 
@@ -85,6 +105,7 @@ for mat in model.Materials:
     pbrShader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Float3).ConnectToSource(diffuseTextureSampler, 'rbg')
 
     u_mats.append(u_mat)
+    count += 1
 
 
 count = 0
@@ -94,20 +115,21 @@ for obj in model.Objects:
 
     if isinstance(geo, Mesh):
 
-        #geo.CombineIdenticalVertices(False,False)
+        #geo.CombineIdenticalVertices(False, False)
         #geo.ConvertQuadsToTriangles()
 
         attr = obj.Attributes
         name = attr.Name
         if not name:
-            name = 'object_' + str(count)
+            name = 'object_'
+
+        name = 'o_' + name.replace(' ', '_').replace('-', '_') + str(count)
 
         matIndex = -1
         if attr.MaterialSource == ObjectMaterialSource.MaterialFromLayer:
             matIndex = model.Layers[attr.LayerIndex].RenderMaterialIndex
         else:
             matIndex = attr.MaterialIndex
-            print('byobject')
 
         mesh = UsdGeom.Mesh.Define(stage, '/root/' + name)
         verts = []
@@ -119,8 +141,8 @@ for obj in model.Objects:
 
         # extents
         bb = geo.GetBoundingBox()
-        extent.append([bb.Min.X, bb.Min.Z, bb.Min.Y])
-        extent.append([bb.Max.X, bb.Max.Z, bb.Max.Y])
+        extent.append([bb.Min.X, bb.Min.Z, -bb.Min.Y])
+        extent.append([bb.Max.X, bb.Max.Z, -bb.Max.Y])
 
         # verts
         for i in range(geo.Vertices.__len__()):
@@ -174,7 +196,13 @@ for obj in model.Objects:
 
     count += 1
 
+# save usda
 stage.GetRootLayer().Save()
 
-subprocess.call(["usdcat", sys.argv[2], "-o", baseFilename + ".usdc"])
-subprocess.call(["usdzip", baseFilename+ ".usdz", baseFilename + ".usdc", texDir])
+# make usdc
+subprocess.call(["usdcat", usda, "-o", usdc])
+# make usdz
+
+chdir(modelDir)
+subprocess.call(["usdzip", usdz, usdc, texDirName])
+chdir(cwd)
