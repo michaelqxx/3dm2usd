@@ -1,6 +1,6 @@
-##Opennurbs 3dm to Pixar Universal Scene Description Converter
+## Opennurbs 3dm to Pixar Universal Scene Description Converter
 
-###Experiment
+### Experiment
 
 You will need to build [rhino3dm python bindings](https://github/mcneel/rhino3dm.git) from source because the pip install version is missing a few things.
 
