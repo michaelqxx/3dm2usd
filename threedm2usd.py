@@ -7,6 +7,7 @@ import uuid
 import subprocess
 import os
 import sys
+from theMesher import MeshMeshItRealGood as convertMesh
 
 if len(sys.argv) != 2:
     quit()
@@ -19,7 +20,7 @@ if not os.access(modelPath, os.F_OK):
     quit()
 
 modelDir = path.dirname(modelPath)
-baseFilename = path.basename(sys.argv[1]).replace('.3dm','')
+baseFilename = path.basename(modelPath).replace('.3dm','')
 usda = path.join(modelDir, baseFilename + '.usda')
 usdc = path.join(modelDir, baseFilename + '.usdc')
 usdz = path.join(modelDir, baseFilename + '.usdz')
@@ -57,11 +58,11 @@ def getTexture(material):
 
 
 # open 3dm
-model = File3dm.Read(sys.argv[1])
+model = File3dm.Read(modelPath)
 
 # create usd
 stage = Usd.Stage.CreateNew(usda)
-UsdGeom.SetStageUpAxis(stage, 'Y') ######## XYZ -> XZ-Y
+UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y) ######## XYZ -> XZ-Y
 xformPrim = UsdGeom.Xform.Define(stage, '/root')
 
 ### Materials
@@ -113,85 +114,37 @@ count = 0
 for obj in model.Objects:
     geo = obj.Geometry
 
+    attr = obj.Attributes
+    name = attr.Name
+    if not name:
+        name = 'object_'
+
+    name = 'o_' + name.replace(' ', '_').replace('-', '_') + str(count)
+
+    matIndex = -1
+    if attr.MaterialSource == ObjectMaterialSource.MaterialFromLayer:
+        matIndex = model.Layers[attr.LayerIndex].RenderMaterialIndex
+    else:
+        matIndex = attr.MaterialIndex
+
+    usdPath = '/root/' + name
+
     if isinstance(geo, Mesh):
 
         #geo.CombineIdenticalVertices(False, False)
         #geo.ConvertQuadsToTriangles()
-
-        attr = obj.Attributes
-        name = attr.Name
-        if not name:
-            name = 'object_'
-
-        name = 'o_' + name.replace(' ', '_').replace('-', '_') + str(count)
-
-        matIndex = -1
-        if attr.MaterialSource == ObjectMaterialSource.MaterialFromLayer:
-            matIndex = model.Layers[attr.LayerIndex].RenderMaterialIndex
-        else:
-            matIndex = attr.MaterialIndex
-
-        mesh = UsdGeom.Mesh.Define(stage, '/root/' + name)
-        verts = []
-        norms = []
-        faceCounts = []
-        faceIndices = []
-        extent = []
-        texCoords = []
-
-        # extents
-        bb = geo.GetBoundingBox()
-        extent.append([bb.Min.X, bb.Min.Z, -bb.Min.Y])
-        extent.append([bb.Max.X, bb.Max.Z, -bb.Max.Y])
-
-        # verts
-        for i in range(geo.Vertices.__len__()):
-            v = geo.Vertices[i]
-            verts.append([v.X,v.Z,-v.Y])
-        
-        # normals
-        for i in range(geo.Normals.__len__()):
-            n = geo.Normals[i]
-            norms.append([n.X,n.Z,-n.Y])
-        
-        # texture coordinates
-        for i in range(geo.TextureCoordinates.__len__()):
-            tc = geo.TextureCoordinates[i]
-            texCoords.append([tc.X, tc.Y])
-
-        # faces
+        mesh = convertMesh(stage, geo, usdPath)
+    elif isinstance(geo, Brep):
+        r_mesh = Mesh()
         for i in range(geo.Faces.__len__()):
-            f = geo.Faces[i]
-
-            faceIndices.append(f[0])
-            faceIndices.append(f[1])
-            faceIndices.append(f[2])
-
-            if f[2] == f[3]:
-                faceCounts.append(3) # triangle
-            else:
-                faceCounts.append(4) # quad
-                faceIndices.append(f[3])
-
-        # attributes
-        mesh.CreatePointsAttr(verts)
-
-        normPrimvar = mesh.CreatePrimvar("normals", Sdf.ValueTypeNames.Normal3fArray, UsdGeom.Tokens.faceVarying)
-        normPrimvar.Set(norms)
-
-        texPrimvar = mesh.CreatePrimvar("Texture_uv", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
-        texPrimvar.Set(texCoords)
-
-        indices = Vt.IntArray(faceIndices.__len__(), faceIndices)
-        texPrimvar.SetIndices(indices)
-        normPrimvar.SetIndices(indices)
-
-        mesh.CreateFaceVertexIndicesAttr(faceIndices)
-        mesh.CreateFaceVertexCountsAttr(faceCounts)
-        mesh.CreateExtentAttr(extent)
-        ssa = mesh.CreateSubdivisionSchemeAttr()
-        ssa.Set('none')
-
+            face = geo.Faces[i]
+            r_mesh.Append(face.GetMesh(MeshType.Render))
+        mesh = convertMesh(stage, r_mesh, usdPath)
+    elif isinstance(geo, Extrusion):
+        r_mesh = geo.GetMesh(MeshType.Render)
+        mesh = convertMesh(stage, r_mesh, usdPath)
+    
+    if mesh:
         UsdShade.MaterialBindingAPI(mesh).Bind(u_mats[matIndex])
 
     count += 1
