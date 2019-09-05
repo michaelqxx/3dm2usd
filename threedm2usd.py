@@ -111,10 +111,16 @@ for mat in model.Materials:
 
 count = 0
 
+# Meshes
 for obj in model.Objects:
-    geo = obj.Geometry
+ 
 
     attr = obj.Attributes
+    if not attr.Visible:
+        continue
+    
+    geo = obj.Geometry
+
     name = attr.Name
     if not name:
         name = 'object_'
@@ -130,7 +136,6 @@ for obj in model.Objects:
     usdPath = '/root/' + name
 
     if isinstance(geo, Mesh):
-
         #geo.CombineIdenticalVertices(False, False)
         #geo.ConvertQuadsToTriangles()
         mesh = convertMesh(stage, geo, usdPath)
@@ -143,6 +148,8 @@ for obj in model.Objects:
     elif isinstance(geo, Extrusion):
         r_mesh = geo.GetMesh(MeshType.Render)
         mesh = convertMesh(stage, r_mesh, usdPath)
+    else:
+        continue
     
     if mesh:
         UsdShade.MaterialBindingAPI(mesh).Bind(u_mats[matIndex])
