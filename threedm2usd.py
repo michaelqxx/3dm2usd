@@ -90,6 +90,8 @@ for mat in model.Materials:
     # ?
     pbrShader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(mat.Shine / 255.0) # ?
 
+    pbrShader.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set( 1 - mat.Transparency)
+
     u_mat.CreateSurfaceOutput().ConnectToSource(pbrShader, "surface")
 
     primvarReader = UsdShade.Shader.Define(stage, nodeName + '/Primvar')
