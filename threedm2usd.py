@@ -20,41 +20,49 @@ if not os.access(modelPath, os.F_OK):
     quit()
 
 modelDir = path.dirname(modelPath)
-baseFilename = path.basename(modelPath).replace('.3dm','')
-usda = path.join(modelDir, baseFilename + '.usda')
-usdc = path.join(modelDir, baseFilename + '.usdc')
-usdz = path.join(modelDir, baseFilename + '.usdz')
-texDirName = '0'
-absTexDir = path.join(modelDir, texDirName)
+baseName = path.basename(modelPath)
+baseFilename = baseName.replace('.3dm','')
 
-if path.exists(absTexDir):
-    shutil.rmtree(absTexDir)
+tmpDir = '_tmp'
+if path.exists(tmpDir):
+    shutil.rmtree(tmpDir)
 
-mkdir(absTexDir)
+mkdir(tmpDir)
+chdir(tmpDir)
+shutil.copyfile(modelPath, path.basename(modelPath))
+
+usda = baseFilename + '.usda'
+usdc = baseFilename + '.usdc'
+usdz = baseFilename + '.usdz'
+texDir = '0'
+
+mkdir(texDir)
 
 def getTexture(material):
     tex = material.GetBitmapTexture()
     if tex:
         texBase = path.basename(tex.FileName)
-        dst = path.join(absTexDir, texBase)
+        dst = path.join(texDir, texBase)
         if os.access(tex.FileName, os.F_OK):
             shutil.copyfile(tex.FileName, dst)
         elif os.access(path.join(modelDir, texBase), os.F_OK):
             shutil.copyfile(path.join(modelDir, texBase), dst)
 
-        return path.join(texDirName, texBase)
+        return dst
     else: # doing the vectary thing, creating a 2x2 image of the color value
         d = material.DiffuseColor
 
-        img = [(d[0],d[1],d[2], d[0],d[1],d[2]),
-             (d[0],d[1],d[2], d[0],d[1],d[2])]       
+        alpha = int((1 - mat.Transparency) * 255)
 
-        dst = path.join(absTexDir, material.Name+'_diffuse.png')
+        img = [(d[0],d[1],d[2],alpha, d[0],d[1],d[2],alpha),
+             (d[0],d[1],d[2],alpha, d[0],d[1],d[2],alpha)]      
+
+        dst = path.join(texDir, material.Name+'_diffuse.png')
         f = open(dst, 'wb')
-        w = png.Writer(2,2)
+        w = png.Writer(width=2, height=2, alpha='RGBA')
         w.write(f,img)
         f.close()
-        return path.join(texDirName, material.Name+'_diffuse.png')
+        return dst
 
 
 # open 3dm
@@ -83,6 +91,8 @@ for mat in model.Materials:
 
     pbrShader = UsdShade.Shader.Define(stage, nodeName + '/pbr')
     pbrShader.CreateIdAttr("UsdPreviewSurface")
+
+    print('Shine on ...'+str(mat.Shine))
 
     # Shine to roughness?
     roughness = 1.0 - (mat.Shine / 255.0) # MaxShine
@@ -116,7 +126,6 @@ count = 0
 # Meshes
 for obj in model.Objects:
  
-
     attr = obj.Attributes
     if not attr.Visible:
         continue
@@ -165,6 +174,8 @@ stage.GetRootLayer().Save()
 subprocess.call(["usdcat", usda, "-o", usdc])
 # make usdz
 
-chdir(modelDir)
-subprocess.call(["usdzip", usdz, usdc, texDirName])
+subprocess.call(["usdzip", usdz, usdc, texDir])
+
+os.remove(baseName)
+shutil.rmtree(texDir)
 chdir(cwd)
