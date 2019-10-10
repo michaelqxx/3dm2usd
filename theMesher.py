@@ -1,5 +1,4 @@
-from rhino3dm import *
-from pxr import Usd, Vt, UsdGeom, UsdShade, Sdf
+from pxr import Vt, UsdGeom, Sdf
 
 def MeshMeshItRealGood(stage, r_mesh, name):
         mesh = UsdGeom.Mesh.Define(stage, name)

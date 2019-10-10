@@ -1,69 +1,35 @@
-from rhino3dm import *
-from pxr import Usd, Vt, UsdGeom, UsdShade, Sdf
+from rhino3dm import File3dm, Mesh, ObjectMaterialSource, Brep, Extrusion, MeshType
+from pxr import Usd, UsdGeom, UsdShade, Sdf
 import shutil
-from os import path, mkdir, chdir, getcwd
 import png
-import uuid
 import subprocess
 import os
 import sys
+
 from theMesher import MeshMeshItRealGood as convertMesh
+from theMaterializer import Materializer
 
-if len(sys.argv) != 2:
-    quit()
+# path names, tmp dir
+cwd = os.getcwd()
 
-cwd = getcwd()
+modelPath = os.path.abspath(sys.argv[1])
 
-modelPath = path.abspath(sys.argv[1])
 if not os.access(modelPath, os.F_OK):
     print(modelPath + " does not exist")
     quit()
 
-modelDir = path.dirname(modelPath)
-baseName = path.basename(modelPath)
+baseName = os.path.basename(modelPath)
 baseFilename = baseName.replace('.3dm','')
-
-tmpDir = '_tmp'
-if path.exists(tmpDir):
-    shutil.rmtree(tmpDir)
-
-mkdir(tmpDir)
-chdir(tmpDir)
-shutil.copyfile(modelPath, path.basename(modelPath))
-
 usda = baseFilename + '.usda'
 usdc = baseFilename + '.usdc'
 usdz = baseFilename + '.usdz'
-texDir = '0'
 
-mkdir(texDir)
+tmpDir = '_tmp'
+if os.path.exists(tmpDir):
+    shutil.rmtree(tmpDir)
 
-def getTexture(material):
-    tex = material.GetBitmapTexture()
-    if tex:
-        texBase = path.basename(tex.FileName)
-        dst = path.join(texDir, texBase)
-        if os.access(tex.FileName, os.F_OK):
-            shutil.copyfile(tex.FileName, dst)
-        elif os.access(path.join(modelDir, texBase), os.F_OK):
-            shutil.copyfile(path.join(modelDir, texBase), dst)
-
-        return dst
-    else: # doing the vectary thing, creating a 2x2 image of the color value
-        d = material.DiffuseColor
-
-        alpha = int((1 - mat.Transparency) * 255)
-
-        img = [(d[0],d[1],d[2],alpha, d[0],d[1],d[2],alpha),
-             (d[0],d[1],d[2],alpha, d[0],d[1],d[2],alpha)]      
-
-        dst = path.join(texDir, material.Name+'_diffuse.png')
-        f = open(dst, 'wb')
-        w = png.Writer(width=2, height=2, alpha='RGBA')
-        w.write(f,img)
-        f.close()
-        return dst
-
+os.mkdir(tmpDir)
+os.chdir(tmpDir)
 
 # open 3dm
 model = File3dm.Read(modelPath)
@@ -73,57 +39,16 @@ stage = Usd.Stage.CreateNew(usda)
 UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y) ######## XYZ -> XZ-Y
 xformPrim = UsdGeom.Xform.Define(stage, '/root')
 
-### Materials
-matScope = UsdGeom.Scope.Define(stage, '/materials')
+# Materials
+materializer = Materializer(stage)
 u_mats = []
-count = 0
 for mat in model.Materials:
 
-    materialScope = '/materials/'
-    if not mat.Name:
-        nodeName = materialScope + 'material_' + str(count)
-    else:
-        nodeName = materialScope + mat.Name.replace(' ', '_').replace('-', '_') + str(count)
-
-    u_mat = UsdShade.Material.Define(stage, nodeName)
-    stinput = u_mat.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token)
-    stinput.Set('Texture_uv')
-
-    pbrShader = UsdShade.Shader.Define(stage, nodeName + '/pbr')
-    pbrShader.CreateIdAttr("UsdPreviewSurface")
-
-    print('Shine on ...'+str(mat.Shine))
-
-    # Shine to roughness?
-    roughness = 1.0 - (mat.Shine / 255.0) # MaxShine
-    pbrShader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
-    # ?
-    pbrShader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(mat.Shine / 255.0) # ?
-
-    pbrShader.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set( 1 - mat.Transparency)
-
-    u_mat.CreateSurfaceOutput().ConnectToSource(pbrShader, "surface")
-
-    primvarReader = UsdShade.Shader.Define(stage, nodeName + '/Primvar')
-    primvarReader.CreateIdAttr('UsdPrimvarReader_float2')
-    primvarReader.CreateInput('varname', Sdf.ValueTypeNames.Token).ConnectToSource(stinput)
-
-    diffuseTextureSampler = UsdShade.Shader.Define(stage, nodeName + '/color_map')
-    diffuseTextureSampler.CreateIdAttr('UsdUVTexture')
-
-    diffuse = getTexture(mat)
-    diffuseTextureSampler.CreateInput('file', Sdf.ValueTypeNames.Asset).Set(diffuse)
-
-    diffuseTextureSampler.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(primvarReader, 'result')
-    pbrShader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Float3).ConnectToSource(diffuseTextureSampler, 'rbg')
-
+    u_mat = materializer.convertMaterial(mat)
     u_mats.append(u_mat)
-    count += 1
-
-
-count = 0
 
 # Meshes
+count = 0
 for obj in model.Objects:
  
     attr = obj.Attributes
@@ -169,13 +94,14 @@ for obj in model.Objects:
 
 # save usda
 stage.GetRootLayer().Save()
-
 # make usdc
 subprocess.call(["usdcat", usda, "-o", usdc])
 # make usdz
+subprocess.call(["usdzip", usdz, usdc, materializer.texDir])
 
-subprocess.call(["usdzip", usdz, usdc, texDir])
+#for arg in sys.argv:
+#    print(path.splitext(arg))
 
-os.remove(baseName)
-shutil.rmtree(texDir)
-chdir(cwd)
+# exit
+shutil.rmtree(materializer.texDir)
+os.chdir(cwd)
