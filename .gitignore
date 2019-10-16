@@ -5,3 +5,5 @@ venv
 *.3dm
 *.obj
 *.mtl
+*.pyc
+_tmp

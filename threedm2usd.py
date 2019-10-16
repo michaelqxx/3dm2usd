@@ -104,4 +104,4 @@ subprocess.call(["usdzip", usdz, usdc, materializer.texDir])
 
 # exit
 shutil.rmtree(materializer.texDir)
-os.chdir(cwd)
+os.chdir(cwd) 

@@ -20,10 +20,7 @@ if not os.access(modelPath, os.F_OK):
 r_model = File3dm()
 r_model.Settings.ModelUnitSystem = UnitSystem.Centimeters
 
-rootlayer = Layer()
-rootlayer.Name = "root"
-r_model.Layers.Add(rootlayer)
-currentLayerId = 0
+materialName2Index = {"Default":0}
 
 stage = Usd.Stage.Open(sys.argv[1])
 
@@ -48,6 +45,33 @@ for x in usdPaths:
         faceVertexIndicesAttr = x.GetAttribute('faceVertexIndices')
         faceVertexIndices = faceVertexIndicesAttr.Get()
 
+        attr = ObjectAttributes()
+
+        matBinding = x.GetRelationship('material:binding')
+        matPath = matBinding.GetTargets()[0]
+        matName = str(matPath)
+        
+        if matName not in materialName2Index:
+            print(matName)
+
+            u_mat = stage.GetPrimAtPath(matPath)
+            color_map = stage.GetPrimAtPath(matPath.AppendPath('color_map'))
+            inputsFile = color_map.GetAttribute('inputs:file').Get().resolvedPath
+
+            r_mat = Material()
+            r_mat.Name = matName
+            r_mat.SetBitmapTexture(inputsFile)
+            r_model.Materials.Add(r_mat)
+
+            layer = Layer()
+            layer.Name = matName
+            layer.RenderMaterialIndex = r_model.Materials.__len__() - 1
+            r_model.Layers.Add(layer)
+            attr.LayerIndex = r_model.Layers.__len__() - 1
+            materialName2Index[matName] = r_model.Materials.__len__() - 1
+        else:
+            attr.LayerIndex = materialName2Index[matName]
+
         count = 0
         for fvc in faceVertexCounts:
             f = []
@@ -60,6 +84,8 @@ for x in usdPaths:
                 r_mesh.Faces.AddFace(f[0], f[1], f[2], f[2])
 
         rc = r_mesh.Normals.ComputeNormals()
-        r_model.Objects.AddMesh(r_mesh)
+        r_model.Objects.AddMesh(r_mesh, attr)
+
 
 r_model.Write(sys.argv[2], 5)
+
