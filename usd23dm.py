@@ -1,66 +1,68 @@
-from rhino3dm import *
-from pxr import Usd, Vt, UsdGeom, UsdShade, Sdf
-import shutil
 import os
-import png
-import uuid
-import subprocess
+
+from rhino3dm import *
+from pxr import Usd, Vt, UsdGeom, UsdShade, Sdf, Gf
+
+from theTransformizer import getTransformMatrix, transform_point
+from theMesher import usd_mesh_to_rhino
 
 import sys
+
 
 if len(sys.argv) != 3:
     quit()
 
+# Dictionary to store materials as they are found
+materialName2Index = {"Default":0}
 
+# Setup models
 modelPath = os.path.abspath(sys.argv[1])
 if not os.access(modelPath, os.F_OK):
     print(modelPath + " does not exist")
     quit()
 
+# 3dm
 r_model = File3dm()
-r_model.Settings.ModelUnitSystem = UnitSystem.Centimeters
-
-materialName2Index = {"Default":0}
-
+r_model.Settings.ModelUnitSystem = UnitSystem.Meters
+# Usd
 stage = Usd.Stage.Open(sys.argv[1])
 
-usdPaths = stage.Traverse()
-for x in usdPaths:
-    #print(x.GetTypeName())
-    if x.GetTypeName() == 'Mesh':
-        #print('Mesh')
-        r_mesh = Mesh()
-        pointsAttr = x.GetAttribute('points')
-        points = pointsAttr.Get()
-        r_mesh.Vertices.SetCount(points.__len__())
+# Recursive function to iterate through children and apply parent transforms
+def process_child(prim, parentTransform):
 
-        count = 0
-        for p in points:
-            #print(p)
-            r_mesh.Vertices.__setitem__(count, Point3f(p[0], p[1], p[2]))
-            count += 1
+    transform = getTransformMatrix(prim) * parentTransform
+    
+    if prim.GetTypeName() == 'Mesh':
 
-        faceVertexCountsAttr = x.GetAttribute('faceVertexCounts')
-        faceVertexCounts = faceVertexCountsAttr.Get()
-        faceVertexIndicesAttr = x.GetAttribute('faceVertexIndices')
-        faceVertexIndices = faceVertexIndicesAttr.Get()
-
+        r_mesh = usd_mesh_to_rhino(prim, transform)
         attr = ObjectAttributes()
 
-        matBinding = x.GetRelationship('material:binding')
+        matBinding = prim.GetRelationship('material:binding')
         matPath = matBinding.GetTargets()[0]
         matName = str(matPath)
+        #print(matPath)
         
+        # Set material to layer, object to layer based on material
         if matName not in materialName2Index:
-            print(matName)
-
+            
             u_mat = stage.GetPrimAtPath(matPath)
-            color_map = stage.GetPrimAtPath(matPath.AppendPath('color_map'))
-            inputsFile = color_map.GetAttribute('inputs:file').Get().resolvedPath
-
             r_mat = Material()
             r_mat.Name = matName
-            r_mat.SetBitmapTexture(inputsFile)
+
+            # TODO: deal with all material props
+            color_map = stage.GetPrimAtPath(matPath.AppendPath('diffuseColor_texture'))
+            if not color_map:
+                color_map = stage.GetPrimAtPath(matPath.AppendPath('diffuseColor_opacity_texture'))
+
+            if color_map:
+                inputsFile = color_map.GetAttribute('inputs:file').Get().resolvedPath
+                r_mat.SetBitmapTexture(inputsFile)
+            else:
+                surfaceShader = stage.GetPrimAtPath(matPath.AppendPath('surfaceShader'))
+                if surfaceShader:
+                    diffuseColor = surfaceShader.GetAttribute('inputs:diffuseColor').Get()
+                    r_mat.DiffuseColor = ( int( 255 * diffuseColor[0] ), int( 255 * diffuseColor[1] ), int( 255 * diffuseColor[2] ), 0)
+
             r_model.Materials.Add(r_mat)
 
             layer = Layer()
@@ -72,20 +74,19 @@ for x in usdPaths:
         else:
             attr.LayerIndex = materialName2Index[matName]
 
-        count = 0
-        for fvc in faceVertexCounts:
-            f = []
-            for i in range(count, (count + fvc)):
-                f.append(faceVertexIndices[i])
-                count = i + 1
-            if f.__len__() == 4:
-                r_mesh.Faces.AddFace(f[0], f[1], f[2], f[3])
-            else:
-                r_mesh.Faces.AddFace(f[0], f[1], f[2], f[2])
-
-        rc = r_mesh.Normals.ComputeNormals()
         r_model.Objects.AddMesh(r_mesh, attr)
+    
+    for child in prim.GetChildren():
+        process_child(child, transform)
+#
 
+# Begin iteration
+defaultPrim = stage.GetPseudoRoot()
+rootPrims = defaultPrim.GetChildren()
 
+for prim in rootPrims:
+    process_child(prim, Gf.Transform())
+
+# done
 r_model.Write(sys.argv[2], 5)
 

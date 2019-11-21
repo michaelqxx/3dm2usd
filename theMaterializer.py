@@ -18,7 +18,7 @@ class Materializer:
         tex = r_mat.GetBitmapTexture()
         if tex:
             texBase = os.path.basename(tex.FileName)
-            print(texBase)
+            #print(texBase)
             dst = os.path.join(self.texDir, texBase)
             if os.access(tex.FileName, os.F_OK):
                 shutil.copyfile(tex.FileName, dst)
@@ -44,11 +44,11 @@ class Materializer:
     def convertMaterial(self, r_mat):
 
         if not r_mat.Name:
-            nodeName = self.materialScope + '/material_' + str(count)
+            nodeName = self.materialScope + '/material_' + str(r_mat.Index)
         else:
-            nodeName = self.materialScope + '/' + r_mat.Name.replace(' ', '_').replace('-', '_').replace('(', '_').replace(')', '_') + str(self.count)
+            nodeName = self.materialScope + '/' + r_mat.Name.replace(' ', '_').replace('-', '_').replace('(', '_').replace(')', '_') + '_' + str(r_mat.Index)
 
-        print(nodeName)
+        #print(nodeName)
 
         u_mat = UsdShade.Material.Define(self.stage, nodeName)
         stinput = u_mat.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token)
@@ -57,7 +57,7 @@ class Materializer:
         pbrShader = UsdShade.Shader.Define(self.stage, nodeName + '/pbr')
         pbrShader.CreateIdAttr("UsdPreviewSurface")
 
-        print('Shine on ...'+str(r_mat.Shine))
+        #print('Shine on ...'+str(r_mat.Shine))
 
         # Shine to roughness?
         roughness = 1.0 - (r_mat.Shine / 255.0) # MaxShine

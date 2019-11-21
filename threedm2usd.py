@@ -1,4 +1,4 @@
-from rhino3dm import File3dm, Mesh, ObjectMaterialSource, Brep, Extrusion, MeshType
+from rhino3dm import File3dm, Mesh, ObjectMaterialSource, Brep, Extrusion, MeshType, Material
 from pxr import Usd, UsdGeom, UsdShade, Sdf
 import shutil
 import png
@@ -6,7 +6,7 @@ import subprocess
 import os
 import sys
 
-from theMesher import MeshMeshItRealGood as convertMesh
+from theMesher import rhino_mesh_to_usd as convertMesh
 from theMaterializer import Materializer
 
 # path names, tmp dir
@@ -40,21 +40,32 @@ UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y) ######## XYZ -> XZ-Y
 xformPrim = UsdGeom.Xform.Define(stage, '/root')
 
 # Materials
+# put a default material last so that materialIndex: -1 will wrap around to it
+defaultMat = Material()
+defaultMat.Name = "Default"
+model.Materials.Add(defaultMat)
+print('Adding Default Material ...')
+
 materializer = Materializer(stage)
 u_mats = []
+count = 0
 for mat in model.Materials:
-
     u_mat = materializer.convertMaterial(mat)
     u_mats.append(u_mat)
+    count += 1
+
+print('Created {} Materials'.format(count))
 
 # Meshes
 count = 0
 for obj in model.Objects:
  
     attr = obj.Attributes
-    if not attr.Visible:
-        continue
-    
+    layer = model.Layers[attr.LayerIndex]
+
+    if (not attr.Visible) or (not layer.Visible):
+        continue # doesn't seem to do anything
+
     geo = obj.Geometry
 
     name = attr.Name
@@ -65,7 +76,7 @@ for obj in model.Objects:
 
     matIndex = -1
     if attr.MaterialSource == ObjectMaterialSource.MaterialFromLayer:
-        matIndex = model.Layers[attr.LayerIndex].RenderMaterialIndex
+        matIndex = layer.RenderMaterialIndex
     else:
         matIndex = attr.MaterialIndex
 
@@ -91,6 +102,8 @@ for obj in model.Objects:
         UsdShade.MaterialBindingAPI(mesh).Bind(u_mats[matIndex])
 
     count += 1
+
+print('Created {} Meshes'.format(count))
 
 # save usda
 stage.GetRootLayer().Save()
