@@ -46,7 +46,7 @@ class Materializer:
         if not r_mat.Name:
             nodeName = self.materialScope + '/material_' + str(r_mat.Index)
         else:
-            nodeName = self.materialScope + '/' + r_mat.Name.replace(' ', '_').replace('-', '_').replace('(', '_').replace(')', '_') + '_' + str(r_mat.Index)
+            nodeName = self.materialScope + '/' + r_mat.Name.replace('/','').replace(' ', '_').replace('-', '_').replace('(', '_').replace(')', '_') + '_' + str(r_mat.Index)
 
         #print(nodeName)
 

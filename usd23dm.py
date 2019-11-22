@@ -37,10 +37,12 @@ def process_child(prim, parentTransform):
         r_mesh = usd_mesh_to_rhino(prim, transform)
         attr = ObjectAttributes()
 
+        #print(prim.GetName())
+        attr.Name = prim.GetName()
+
         matBinding = prim.GetRelationship('material:binding')
         matPath = matBinding.GetTargets()[0]
-        matName = str(matPath)
-        #print(matPath)
+        matName = str(matPath).replace('/','_')
         
         # Set material to layer, object to layer based on material
         if matName not in materialName2Index:
@@ -80,12 +82,21 @@ def process_child(prim, parentTransform):
         process_child(child, transform)
 #
 
-# Begin iteration
-defaultPrim = stage.GetPseudoRoot()
-rootPrims = defaultPrim.GetChildren()
+# the 'root'
+pseudoRoot = stage.GetPseudoRoot()
+rootPrims = pseudoRoot.GetChildren()
 
+initialTransform = Gf.Transform() # an Identity
+
+# Check for Y up
+upAxis = UsdGeom.GetStageUpAxis(stage)
+if upAxis == 'Y':
+    ninetyAroundX = Gf.Rotation((1,0,0), 90)
+    initialTransform.SetRotation( ninetyAroundX )
+
+# Begin iteration
 for prim in rootPrims:
-    process_child(prim, Gf.Transform())
+    process_child(prim, initialTransform)
 
 # done
 r_model.Write(sys.argv[2], 5)
